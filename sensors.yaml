@@ -1,0 +1,38 @@
+#################################################################
+## Sensors
+#################################################################
+##########################################################
+## Roof Weather Data
+##########################################################
+- platform: statistics
+  name: Roof Windspeed 1h Gust
+  entity_id: sensor.roof_windspeed_meter
+  state_characteristic: value_max
+  sampling_size: 999
+  precision: 1
+  max_age:
+    hours: 1
+- platform: statistics
+  name: Roof Windspeed 24h Gust
+  entity_id: sensor.roof_windspeed_meter
+  state_characteristic: value_max
+  sampling_size: 999
+  precision: 1
+  max_age:
+    hours: 24
+- platform: statistics
+  name: Roof Windspeed 1h Average
+  entity_id: sensor.roof_windspeed_meter
+  state_characteristic: average_linear
+  sampling_size: 999
+  precision: 1
+  max_age:
+    hours: 1
+- platform: statistics
+  name: Roof Windspeed 10m Average
+  entity_id: sensor.roof_windspeed_meter
+  state_characteristic: average_linear
+  sampling_size: 999
+  precision: 1
+  max_age:
+    minutes: 10

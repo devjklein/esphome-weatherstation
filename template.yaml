@@ -1,0 +1,44 @@
+- sensor:
+    - name: Roof Beaufort Wind Scale
+      state: >
+        {% if states('sensor.roof_windspeed_10m_average')|float < 1 %}
+          Calm
+        {% elif states('sensor.roof_windspeed_10m_average')|float > 0 and states('sensor.roof_windspeed_10m_average')|float < 4 %}
+          Light Air
+        {% elif states('sensor.roof_windspeed_10m_average')|float > 3 and states('sensor.roof_windspeed_10m_average')|float < 8 %}
+          Light Breeze
+        {% elif states('sensor.roof_windspeed_10m_average')|float > 7 and states('sensor.roof_windspeed_10m_average')|float < 13 %}
+          Gentle Breeze
+        {% elif states('sensor.roof_windspeed_10m_average')|float > 12 and states('sensor.roof_windspeed_10m_average')|float < 19 %}
+          Moderate Breeze
+        {% elif states('sensor.roof_windspeed_10m_average')|float > 18 and states('sensor.roof_windspeed_10m_average')|float < 25 %}
+          Fresh Breeze
+        {% elif states('sensor.roof_windspeed_10m_average')|float > 24 and states('sensor.roof_windspeed_10m_average')|float < 32 %}
+          Strong Breeze
+        {% elif states('sensor.roof_windspeed_10m_average')|float > 31 and states('sensor.roof_windspeed_10m_average')|float < 39 %}
+          Near Gale
+        {% elif states('sensor.roof_windspeed_10m_average')|float > 38 and states('sensor.roof_windspeed_10m_average')|float < 47 %}
+          Gale
+        {% elif states('sensor.roof_windspeed_10m_average')|float > 46 and states('sensor.roof_windspeed_10m_average')|float < 55 %}
+          Severe Gale
+        {% elif states('sensor.roof_windspeed_10m_average')|float > 54 and states('sensor.roof_windspeed_10m_average')|float < 64 %}
+          Storm
+        {% elif states('sensor.roof_windspeed_10m_average')|float > 63 and states('sensor.roof_windspeed_10m_average')|float < 73 %}
+          Violent Storm
+        {% elif states('sensor.roof_windspeed_10m_average')|float > 72 %}
+          Hurricane Force
+        {% else %}
+          Unknown
+        {% endif %}
+      icon: >
+        {% if states('sensor.roof_windspeed_10m_average')|float < 13 %}
+          mdi:tailwind
+        {% elif states('sensor.roof_windspeed_10m_average')|float > 12 and states('sensor.roof_windspeed_10m_average')|float < 55 %}
+          mdi:weather-windy
+        {% elif states('sensor.roof_windspeed_10m_average')|float > 54 and states('sensor.roof_windspeed_10m_average')|float < 73 %}
+          mdi:weather-lightning-rainy
+        {% elif states('sensor.roof_windspeed_10m_average')|float > 72 %}
+          mdi:weather-hurricane
+        {% else %}
+          mdi:help
+        {% endif %}
