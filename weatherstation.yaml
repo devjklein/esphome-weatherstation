@@ -11,6 +11,7 @@ wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_pw
   fast_connect: on
+  power_save_mode: none
   manual_ip:
     static_ip: ###.###.###.###
     gateway: ###.###.###.###
@@ -25,15 +26,21 @@ logger:
   #level: INFO
 
 api:
-  password: !secret api_pw
+  encryption:
+    key: "###"
 
 ota:
   password: !secret api_pw
 
-sensor:
-#
+# ==============================================================================
+# Sensors Configuration
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
 # Wind Speed
-#
+# ------------------------------------------------------------------------------
+
+sensor:
   - platform: pulse_meter
     pin: 
       number: GPIO14
@@ -41,103 +48,75 @@ sensor:
     name: '${loc} Windspeed Meter'
     icon: 'mdi:weather-windy'
     id: wind_meter
+    device_class: "wind_speed"
+    state_class: "measurement"
     unit_of_measurement: 'mph'
     accuracy_decimals: 1
-    timeout: 5s
+    timeout: 2s # Default 5s
     filters:
-      - multiply: 0.0124285 #1.492mph per rotation so 1 / 60 / 2 * 1.491424
-      - sliding_window_moving_average: # Helps prevent too many datapoints
-          window_size: 15
-          send_every: 15
-                
-#  - platform: template
-#    name: '${loc} Windspeed'
-#    icon: 'mdi:weather-windy'
-#    id: wind_meter_avg
-#    lambda: return id(wind_meter).state;
-#    unit_of_measurement: 'mph'
-#    update_interval: 1min
-#    filters:
-#      - throttle_average: 1min
-# This method was used for Beaufort until I moved to HASS statistics for my averages.
-#    on_value:
-#      lambda: |-
-#        if (id(wind_meter_avg).state < 1) {
-#          id(wind_scale).publish_state("Calm");
-#        } else if (id(wind_meter_avg).state > 0 && id(wind_meter_avg).state < 4) {
-#          id(wind_scale).publish_state("Light Air");
-#        } else if (id(wind_meter_avg).state > 3 && id(wind_meter_avg).state < 8) {
-#          id(wind_scale).publish_state("Light Breeze");
-#        } else if (id(wind_meter_avg).state > 7 && id(wind_meter_avg).state < 13) {
-#          id(wind_scale).publish_state("Gentle Breeze");
-#        } else if (id(wind_meter_avg).state > 12 && id(wind_meter_avg).state < 19) {
-#          id(wind_scale).publish_state("Moderate Breeze");
-#        } else if (id(wind_meter_avg).state > 18 && id(wind_meter_avg).state < 25) {
-#          id(wind_scale).publish_state("Fresh Breeze");
-#        } else if (id(wind_meter_avg).state > 24 && id(wind_meter_avg).state < 32) {
-#          id(wind_scale).publish_state("Strong Breeze");
-#        } else if (id(wind_meter_avg).state > 31 && id(wind_meter_avg).state < 39) {
-#          id(wind_scale).publish_state("Near Gale");
-#        } else if (id(wind_meter_avg).state > 38 && id(wind_meter_avg).state < 47) {
-#          id(wind_scale).publish_state("Gale");
-#        } else if (id(wind_meter_avg).state > 46 && id(wind_meter_avg).state < 55) {
-#          id(wind_scale).publish_state("Severe Gale");
-#        } else if (id(wind_meter_avg).state > 54 && id(wind_meter_avg).state < 64) {
-#          id(wind_scale).publish_state("Storm");
-#        } else if (id(wind_meter_avg).state > 63 && id(wind_meter_avg).state < 73) {
-#          id(wind_scale).publish_state("Violent Storm");
-#        } else if (id(wind_meter_avg).state > 72) {
-#          id(wind_scale).publish_state("Hurricane Force");
-#        } else {
-#          id(wind_scale).publish_state("");
-#        }
-#
-# Pulse counter style wind meter; less data resolution.
-# - platform: pulse_counter
-#    pin:
-#      number: GPIO14
-#      mode: INPUT_PULLUP
-#    unit_of_measurement: 'mph'
-#    accuracy_decimals: 0
-#    name: '${loc} Windspeed'
-#    icon: 'mdi:weather-windy'
-#    id: wind_sensor
-#    count_mode:
-#      rising_edge: DISABLE
-#      falling_edge: INCREMENT
-#    internal_filter: 13us
-#    update_interval: 60s
-#    filters:
-#      # - sliding_window_moving_average:
-#      #     window_size: 4
-#      #     send_every: 1
-#      - multiply: 0.0124285
-#
+      - multiply: 0.0124285 # 1.492mph per rotation so 1 / 60 / 2 * 1.491424
+      - throttle_average: 2s # Send average windspeed every 2 seconds, this
+                             # seems to be the consensus on weather forums
+                             # for recording this data.
+                             # https://www.wxforum.net/index.php?topic=41489.0
+
+# ------------------------------------------------------------------------------
 # Rainfall
-#
+# ------------------------------------------------------------------------------
+
   - platform: pulse_meter
     pin:
       number: GPIO32
       mode: INPUT_PULLUP
-    name: "${loc} rainfall per min"
+    name: "${loc} Rainfall Per Hour"
     id: rain_meter
     icon: "mdi:weather-rainy"
-    internal_filter: 500ms # Due to bug with pulse_meter counting rising and falling edges.
-    timeout: 1min
-    unit_of_measurement: "in"
+    internal_filter: 500ms
+    timeout: 45min
+    device_class: "precipitation_intensity"
+    state_class: "total_increasing"
+    unit_of_measurement: "in/h"
     accuracy_decimals: 2
     filters:
-      - multiply: 0.0204 # Calibration
+      - multiply: 1.224 # Calibration, 0.0204 * 60 for pulses/hour
     total:
       name: "${loc} Total Daily Rainfall"
+      id: total_daily_rainfall
       icon: "mdi:beaker-outline"
+      device_class: "precipitation"
+      state_class: "total_increasing"
       unit_of_measurement: "in"
-      accuracy_decimals: 2
+      accuracy_decimals: 4
       filters:
       - multiply: 0.0204 # Calibration
-#
+      on_value: 
+        then:
+          # Only increment total_rainfall_counter on rain (not on reset at midnight)
+          - lambda: |-
+              if (id(total_daily_rainfall).state != 0) {
+                id(total_rainfall_counter) += 1; 
+              }
+          - sensor.template.publish:
+              id: total_rainfall
+              state: !lambda 'return id(total_rainfall_counter);'
+
+  - platform: template
+    name: "${loc} Total Rainfall"
+    id: total_rainfall
+    update_interval: never
+    unit_of_measurement: "in"
+    icon: "mdi:beaker-outline"
+    device_class: "precipitation"
+    state_class: "total_increasing"
+    accuracy_decimals: 4
+    # Will output total amount of rain over the uptime of the sensor
+    # but we use the count in Home Assistant to get statistics
+    filters:
+      - multiply: 0.0204
+# ------------------------------------------------------------------------------
 # Wind Direction
-#
+# ------------------------------------------------------------------------------
+
   - platform: adc
     id: adc_sensor
     attenuation: 11db
@@ -149,18 +128,18 @@ sensor:
       - offset: 0.023 # Calibration
     accuracy_decimals: 3 ##IMPORTANT to get resolution for resistance sensor
     
-### ADD WIND CARIDNAL DIRECTION
-### Your values may differ!
-# Direction -- Resistance -- ADC Voltage
-# TODO:
-# N -- 33KΩ -- 2.56v
-# NE -- 8.2KΩ -- 1.5v
-# E -- 1KΩ -- 0.30v
-# SE -- 2.2KΩ -- 0.6v
-# S -- 3.9KΩ -- 0.93v
-# SW -- 16KΩ -- 2.05v
-# W -- 120KΩ -- 3.07v
-# NW -- 64.9KΩ -- 2.89v
+    ### ADD WIND CARIDNAL DIRECTION
+    ### Your values may differ!
+    # Direction -- Resistance -- ADC Voltage
+    # TODO:
+    # N -- 33KΩ -- 2.56v
+    # NE -- 8.2KΩ -- 1.5v
+    # E -- 1KΩ -- 0.30v
+    # SE -- 2.2KΩ -- 0.6v
+    # S -- 3.9KΩ -- 0.93v
+    # SW -- 16KΩ -- 2.05v
+    # W -- 120KΩ -- 3.07v
+    # NW -- 64.9KΩ -- 2.89v
   - platform: resistance
     sensor: adc_sensor
     id: resistance_sensor
@@ -169,8 +148,6 @@ sensor:
     internal: true
     name: Resistance Sensor
     accuracy_decimals: 1
-    #filters:
-      #- heartbeat: 90s
     on_value:
       - if:
           condition:
@@ -285,22 +262,36 @@ sensor:
     unit_of_measurement: "°"
     accuracy_decimals: 0
     update_interval: never
+
+# ==============================================================================
+# Misc Sensors
+# ==============================================================================
+
   - platform: wifi_signal
     name: ${loc} Signal
     update_interval: 60s
     
+    # Allows the rainfall to be changed or reset from the frontend if necessary.
+  - platform: homeassistant
+    id: total_daily_rainfall_adjustment
+    internal: true
+    entity_id: input_number.roof_total_daily_rainfall_adjustment
+    accuracy_decimals: 2
+
+# ==============================================================================
+# Text Sensors
+# ==============================================================================
+
 text_sensor:
   - platform: template
     name: "${loc} Wind Cardinal Direction"
     icon: "mdi:windsock"
     id: wind_dir_card
     update_interval: never
-    
-#  - platform: template
-#    name: '${loc} Beaufort Wind Scale'
-#    icon: 'mdi:tailwind'
-#    id: wind_scale
-#    update_interval: never
+
+# ==============================================================================
+# Buttons Configuration
+# ==============================================================================
 
 button:
   - platform: template
@@ -311,6 +302,17 @@ button:
         - pulse_meter.set_total_pulses:
               id: rain_meter
               value: 0
+  - platform: template
+    name: "${loc} Apply Total Daily Rainfall Adjustment"
+    icon: "mdi:beaker-check-outline"
+    on_press:
+      then:
+        - logger.log:
+            format: "Adjustment: %.2f"
+            args: [ 'id(total_daily_rainfall_adjustment).state' ]
+        - pulse_meter.set_total_pulses:
+              id: rain_meter
+              value: !lambda 'return id(total_daily_rainfall_adjustment).state / 0.0204;' # rainfall/calibration to set this to total number of pulses
     
 time:
   - platform: homeassistant
@@ -323,3 +325,9 @@ time:
           - pulse_meter.set_total_pulses:
               id: rain_meter
               value: 0
+              
+globals:
+   # Total runnning rainfall counter
+ - id: total_rainfall_counter
+   type: int
+   initial_value: '0'
