@@ -1,3 +1,19 @@
+# This is part of a method from preventing an unavailable sensor
+# from causing issues in the wind speed reporting. This needs
+# more testing.
+- trigger:
+    - platform: state
+      entity_id: sensor.roof_windspeed_10m_average_stats
+      not_to:
+        - unknown
+        - unavailable
+  sensor:
+    - name: Roof Windspeed 10m Average
+      unique_id: roof_windspeed_10m_average
+      state: "{{ trigger.to_state.state }}"
+      device_class: wind_speed
+      unit_of_measurement: "mph"
+      
 - sensor:
     - name: Roof Beaufort Wind Scale
       state: >
@@ -41,4 +57,66 @@
           mdi:weather-hurricane
         {% else %}
           mdi:help
+        {% endif %}
+      
+      # This sensor has had some questionable values and so I am not
+      # entirely sure it is working correctly. Use at your own risk
+      # and not for descisions that may impact your health.
+    - name: "Outdoor Feels Like"
+      unit_of_measurement: "°F"
+      device_class: temperature
+      icon: mdi:sun-thermometer
+      state: >
+        {% set temperature = float(states('sensor.garden_temperature')) %}
+        {% set windspeed = float(states('sensor.roof_windspeed_10m_average')) %}
+        {% set humidity = float(states('sensor.garden_humidity')) %}
+        {% set feelslike = temperature %}
+
+        {% if windspeed <1 %}
+          {% set windspeed = 1 %}
+        {% endif %}
+
+        {% if temperature <= 50 and humidity >= 3 %}
+          {% set feelslike = 35.74 + (0.6215 * temperature) - 35.75 * (windspeed ** 0.16) + ( (0.4275 * temperature) * (windspeed ** 0.16) ) %}
+        {% endif %}
+
+        {% if feelslike == temperature and temperature >= 80 %}
+          {% set feelslike = 0.5 * (temperature + 61 + ((temperature - 68) * 1.2) + (humidity * 0.094) ) %}
+
+          {% if feelslike >= 80 %}
+            {% set feelslike = - 42.379 + 2.04901523 * temperature + 10.14333127 * humidity - 0.22475541 * temperature * humidity - 0.00683783 * temperature * temperature - 0.05481717 * humidity * humidity + 0.00122874 * temperature * temperature * humidity + 0.00085282 * temperature * humidity * humidity - 0.00000199 * temperature * temperature * humidity * humidity %}    
+
+            {% if humidity < 13 and temperature >= 80 and temperature <= 112 %}
+              {% set feelslike = feelslike - ((13 - humidity) / 4) * math.sqrt((17 - math.fabs(temperature - 95.0)) / 17) %}
+
+              {% if humidity > 85 and temperature >= 80 and temperature <= 87 %}
+                {% set feelslike = feelslike + ((humidity - 85) / 10) * ((87 - temperature) / 5) %}
+              {% endif %}
+            {% endif %}
+          {% endif %}
+        {% endif %}
+
+        {{ float(feelslike, 0) | round(2) }}
+    - name: Roof Rainfall Last Hour
+      icon: mdi:beaker-outline
+      unit_of_measurement: in
+      state_class: total_increasing
+      unique_id: roof_rainfall_last_hour
+      state: >-
+        {% set count = states('sensor.roof_rainfall_last_hour_count') | int(0) %}
+        {% set in = count * 0.0204 %}
+        {% if count >= 0 %}
+          {{in|round(4, 'floor') }}
+        {% endif %}
+        
+    - name: Roof Rainfall Last 24 Hours
+      icon: mdi:beaker-outline
+      unit_of_measurement: in
+      state_class: total_increasing
+      unique_id: roof_rainfall_last_24_hours
+      state: >-
+        {% set count = states('sensor.roof_rainfall_last_24_hours_count') | int(0) %}
+        {% set in = count * 0.0204 %}
+        {% if count >= 0 %}
+          {{in|round(4, 'floor') }}
         {% endif %}
