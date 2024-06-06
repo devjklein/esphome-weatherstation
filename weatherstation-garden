@@ -1,0 +1,392 @@
+esphome:
+  name: weatherstation-garden
+  on_boot:
+    then:
+      - script.execute: publish_and_sleep
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+substitutions:
+  loc: "Garden"
+  name: "Garden Weather Station"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_pw
+  fast_connect: false
+  manual_ip:
+    static_ip: ###.###.###.###
+    gateway: ###.###.###.###
+    subnet: ###.###.###.###
+  ap:
+    ssid: ${name} Fallback
+    password: !secret fallback_pw
+
+captive_portal:
+
+logger:
+  #level: INFO
+
+api:
+  encryption:
+    key: "###"
+
+ota:
+  password: !secret ota_pw
+  
+    
+i2c:
+  sda:                        GPIO21
+  scl:                        GPIO22
+  scan:                       True
+  frequency:                  100kHz
+
+sensor:
+  # =========================================
+  # Temperature, humidity, pressure sensor
+  # =========================================
+  - platform:                 bme280_i2c
+    id:                       bme280_device
+    address:                  0x76
+    update_interval:          never # 5s
+    temperature:
+      name:                   ${loc} Temperature
+      id:                     bme280_temperature
+      oversampling:           16x
+      filters:
+        - sliding_window_moving_average:
+            window_size: 3
+            send_every: 3
+            send_first_at: 3
+        - lambda: return (x * (9.0/5.0) + 32.0) + id(temperature_calibration).state;
+      unit_of_measurement: "°F"
+    pressure:
+      name:                   ${loc} Pressure
+      id:                     bme280_pressure
+      accuracy_decimals: 2
+      filters:
+        - sliding_window_moving_average:
+            window_size: 3
+            send_every: 3
+            send_first_at: 3
+        - lambda: return x + id(pressure_calibration).state;
+    humidity:
+      name:                   ${loc} Humidity
+      id:                     bme280_humidity
+      filters:
+        - sliding_window_moving_average:
+            window_size: 3
+            send_every: 3
+            send_first_at: 3
+        - lambda: return x + id(humidity_calibration).state;
+  
+  # =========================================
+  # Pressure template sensors
+  # =========================================
+  - platform: template
+    name: ${loc} Altitude
+    id: altitude
+    lambda: |-
+      const float STANDARD_SEA_LEVEL_PRESSURE = id(relative_pressure).state; // Current equivalent sea level pressure, in hPa
+      const float c_temperature = (id(bme280_temperature).state - 32.0) * (5.0 / 9.0); // Temp in C
+      return ((c_temperature + 273.15) / 0.0065) *
+        (powf((STANDARD_SEA_LEVEL_PRESSURE / id(bme280_pressure).state), 0.190234) - 1); // in meter
+    update_interval: never # 15s
+    icon: 'mdi:altimeter'
+    unit_of_measurement: 'm'
+  - platform: template
+    name: ${loc} Relative Pressure
+    id: relative_pressure
+    lambda: |-
+      const float STANDARD_ALTITUDE = 282; // Current altitude, in meters
+      const float c_temperature = (id(bme280_temperature).state - 32.0) * (5.0 / 9.0); // Temp in C
+      return id(bme280_pressure).state / powf(1 - ((0.0065 * STANDARD_ALTITUDE) /
+        (c_temperature + (0.0065 * STANDARD_ALTITUDE) + 273.15)), 5.257); // in hPa, multiply by 0.02953007 for inHg
+    accuracy_decimals: 2
+    update_interval: never # 15s
+    unit_of_measurement: 'hPa'
+    icon: 'mdi:gauge'
+  - platform: template
+    name: ${loc} Relative Pressure (US)
+    id: relative_pressure_us
+    lambda: |-
+      const float STANDARD_ALTITUDE = 282; // Current altitude, in meters
+      const float c_temperature = (id(bme280_temperature).state - 32.0) * (5.0 / 9.0); // Temp in C
+      return (id(bme280_pressure).state / powf(1 - ((0.0065 * STANDARD_ALTITUDE) /
+        (c_temperature + (0.0065 * STANDARD_ALTITUDE) + 273.15)), 5.257)) * 0.02953007;
+    accuracy_decimals: 2
+    update_interval: never # 15s
+    unit_of_measurement: 'inHg'
+    icon: 'mdi:gauge'
+    
+  # =========================================
+  # UV Sensor
+  # =========================================
+  - platform: ltr390
+    id: ltr390_device
+    update_interval: never # 15s
+    uv_index:
+      name: ${loc} UV Index
+      id: uv_index
+      filters:
+        - sliding_window_moving_average:
+            window_size: 3
+            send_every: 3
+            send_first_at: 3
+    uv:
+      name: ${loc} UV Sensor Counts
+      internal: true
+      filters:
+        - sliding_window_moving_average:
+            window_size: 3
+            send_every: 3
+            send_first_at: 3
+    light:
+      name: ${loc} Light
+      id: light
+      filters:
+        - sliding_window_moving_average:
+            window_size: 3
+            send_every: 3
+            send_first_at: 3
+    ambient_light:
+      name: ${loc} Light Sensor Counts
+      internal: true
+      filters:
+        - sliding_window_moving_average:
+            window_size: 3
+            send_every: 3
+            send_first_at: 3
+
+  # =========================================
+  # Voltage monitoring
+  # ========================================= 
+  - platform: adc
+    name: ${loc} ADC Voltage
+    id: "VCC"
+    pin: GPIO33
+    attenuation: 11db
+    update_interval: never # 15s
+    filters:
+    - lambda: return x + id(voltage_calibration).state;
+
+  - platform: template
+    name: ${loc} Battery Voltage
+    icon: 'mdi:lightning-bolt' 
+    id: battery_voltage
+    unit_of_measurement: 'V'
+    accuracy_decimals: 2
+    update_interval: never # 15s
+    # Total Calibration: +0.05
+    # R1: 27000
+    # R2: 100000
+    # The below is the inverse of the voltage divider output voltage formula
+    lambda: |-
+      return ((id(VCC).state * 127000) / 100000);
+    on_value:
+      then:
+      - lambda: |-
+          using namespace std;
+          //ESP_LOGW("main","battery = [%f]",x );
+          static string voltage = to_string(id(battery_voltage).state);
+          //ESP_LOGW("main","string_voltage = [%f]",id(battery_voltage).state );
+          static string sleeptime = to_string((3.50-id(battery_voltage).state)*600+9);
+          //ESP_LOGW("main","string_sleeptime = [%f]",(3.50-id(battery_voltage).state)*600+9 );
+          float multiplier = id(sleep_multiplier).state;
+          if (id(garden_cloud_mode).state)
+          {
+            id(sleep_status).publish_state(60*multiplier);
+            id(deep_sleep_1).set_sleep_duration(60*multiplier*60000);
+          } else {
+            if(x>3.49)
+            {
+              id(sleep_status).publish_state(9.25*multiplier);
+              id(deep_sleep_1).set_sleep_duration(9.25*multiplier*60000);
+            }
+            else if(x<3.50)
+            {
+              id(sleep_status).publish_state((3.50-id(battery_voltage).state)*600*multiplier+9);
+              id(deep_sleep_1).set_sleep_duration(((3.50-x)*600*multiplier+9)*60000);
+            }
+          }
+          id(deep_sleep_1).setup();
+  # - platform: template
+  #   name: ${loc} ADC Voltage
+  #   id: vcc_voltage
+  #   unit_of_measurement: 'V'
+  #   accuracy_decimals: 2
+  #   update_interval: never # 15s
+  #   lambda: |-
+  #     return id(VCC).state;
+  - platform: template
+    name: ${loc} Battery Level
+    id: battery_level
+    unit_of_measurement: '%'
+    accuracy_decimals: 0
+    update_interval: never # 15s
+    lambda: |-
+      return (((id(VCC).state - 2.00) / 1.30) * 100.00);
+  - platform: adc
+    name: ${loc} Soil Moisture
+    id: soil_moisture
+    pin: GPIO32
+    attenuation: 11db
+    update_interval: never # 5s
+    filters:
+    - lambda: |-
+        //ESP_LOGW("main","soil = [%f]",x );
+        if (x > 3.34) {
+          return 0;
+        } else if (x < 1.36) {
+          return 100;
+        } else {
+          return (3.34-x) / (3.34-1.36) * 100.0;
+        }
+    - sliding_window_moving_average:
+          window_size: 5
+          send_every: 5
+    unit_of_measurement: "%"
+    
+  - platform: wifi_signal
+    name: ${loc} Signal
+    id: wifi_signal_strength
+    icon: 'mdi:signal-variant'
+    update_interval: never # 5s
+
+  - platform: template
+    name: "${loc} Sleep Time"
+    icon: "mdi:sleep"
+    id: sleep_status
+    accuracy_decimals: 2
+    update_interval: never
+    unit_of_measurement: 'min'
+    
+  - platform: template
+    name: "${loc} Connection Attempts"
+    id: connection_attempts
+    update_interval: never
+    state_class: measurement
+    lambda: |-
+      float value = id(connection_attempt_counter);
+      return value;
+
+  - platform: homeassistant
+    id: temperature_calibration
+    entity_id: input_number.${loc}_temperature_calibration
+    accuracy_decimals: 1
+    internal: true
+  - platform: homeassistant
+    id: pressure_calibration
+    entity_id: input_number.${loc}_pressure_calibration
+    accuracy_decimals: 2
+    internal: true
+  - platform: homeassistant
+    id: humidity_calibration
+    entity_id: input_number.${loc}_humidity_calibration
+    accuracy_decimals: 1
+    internal: true
+  - platform: homeassistant
+    id: voltage_calibration
+    entity_id: input_number.${loc}_voltage_calibration
+    accuracy_decimals: 2
+    internal: true
+  - platform: homeassistant
+    id: sleep_multiplier
+    entity_id: input_number.${loc}_sleep_multiplier
+    accuracy_decimals: 2
+    internal: true
+      
+deep_sleep:
+  sleep_duration: 9.75min
+  run_duration: 15s
+  id: deep_sleep_1
+  
+binary_sensor:
+  - platform: homeassistant
+    id: prevent_deep_sleep
+    entity_id: input_boolean.prevent_deep_sleep
+  - platform: homeassistant
+    id: garden_cloud_mode
+    entity_id: input_boolean.garden_cloud_mode
+
+script:
+  - id: publish_and_sleep
+    mode: queued
+    then:
+      - repeat:
+          count: 5
+          then:
+            - lambda: |-
+                id(connection_attempt_counter) += 1;
+            - if:
+                condition:
+                  wifi.connected:
+                then:
+                  - if:
+                      condition:
+                        lambda: 'return !id(sensors_updated);'
+                      then:
+                      - component.update: bme280_device
+                      - component.update: ltr390_device
+                      - component.update: soil_moisture
+                      - component.update: VCC
+                      - component.update: wifi_signal_strength
+                      - delay: 1s
+                      - component.update: bme280_device
+                      - component.update: ltr390_device
+                      - component.update: soil_moisture
+                      - component.update: battery_voltage
+                      - component.update: battery_level
+                      - delay: 1s
+                      - component.update: bme280_device
+                      - component.update: ltr390_device
+                      - component.update: soil_moisture
+                      - delay: 1s
+                      - component.update: altitude
+                      - component.update: relative_pressure
+                      - component.update: relative_pressure_us
+                      - component.update: soil_moisture
+                      - delay: 1s
+                      - component.update: soil_moisture
+                      - lambda: id(sensors_updated) = true;
+                      - logger.log: id(sensors_updated)
+                      - if:
+                          condition:
+                            binary_sensor.is_on: prevent_deep_sleep
+                          then:
+                            - deep_sleep.prevent: deep_sleep_1
+                            #- logger.log: "Skipping deep sleep"
+                          else:
+                            - component.update: connection_attempts
+                            - deep_sleep.enter: deep_sleep_1
+            - if:
+                condition:
+                  not:
+                    wifi.connected:
+                then:
+                  - logger.log: "Wi-Fi not connected, retrying..."
+            - delay: 15s  # Delay before the next retry
+      - if:
+          condition:
+            binary_sensor.is_on: prevent_deep_sleep
+          then:
+            - deep_sleep.prevent: deep_sleep_1
+            #- logger.log: "Skipping deep sleep"
+          else:
+            - deep_sleep.enter: deep_sleep_1
+      #- script.execute: publish_and_sleep
+      
+time:
+  - platform: homeassistant
+    id: esptime
+
+globals:
+ - id: connection_attempt_counter
+   type: int
+   # restore_value: true
+   initial_value: '0'
+ - id: sensors_updated
+   type: bool
+   initial_value: "false"
