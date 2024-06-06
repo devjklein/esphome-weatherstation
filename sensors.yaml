@@ -5,10 +5,20 @@
 ## Roof Weather Data
 ##########################################################
 - platform: statistics
+  name: Roof Windspeed 10m Gust
+  entity_id: sensor.roof_windspeed_meter
+  state_characteristic: value_max
+  sampling_size: 9999
+  keep_last_sample: true
+  precision: 1
+  max_age:
+    minutes: 10
+- platform: statistics
   name: Roof Windspeed 1h Gust
   entity_id: sensor.roof_windspeed_meter
   state_characteristic: value_max
-  sampling_size: 999
+  sampling_size: 9999
+  keep_last_sample: true
   precision: 1
   max_age:
     hours: 1
@@ -16,7 +26,8 @@
   name: Roof Windspeed 24h Gust
   entity_id: sensor.roof_windspeed_meter
   state_characteristic: value_max
-  sampling_size: 999
+  sampling_size: 9999
+  keep_last_sample: true
   precision: 1
   max_age:
     hours: 24
@@ -24,15 +35,46 @@
   name: Roof Windspeed 1h Average
   entity_id: sensor.roof_windspeed_meter
   state_characteristic: average_linear
-  sampling_size: 999
+  sampling_size: 9999
+  keep_last_sample: true
   precision: 1
   max_age:
     hours: 1
+
 - platform: statistics
-  name: Roof Windspeed 10m Average
+  name: Roof Windspeed 10m Average Stats
   entity_id: sensor.roof_windspeed_meter
   state_characteristic: average_linear
-  sampling_size: 999
+  sampling_size: 9999
   precision: 1
   max_age:
     minutes: 10
+
+- platform: statistics
+  name: Roof Wind Heading 10m Average
+  entity_id: sensor.roof_wind_heading
+  state_characteristic: mean_circular
+  sampling_size: 9999
+  precision: 1
+  max_age:
+    minutes: 10
+- platform: statistics
+  name: Roof Rainfall Last Hour Count
+  unique_id: sensor.roof_rainfall_last_hour_count
+  entity_id: sensor.roof_total_rainfall
+  state_characteristic: count
+  keep_last_sample: false
+  sampling_size: 999
+  precision: 4
+  max_age:
+    hours: 1
+- platform: statistics
+  name: Roof Rainfall Last 24 Hours Count
+  unique_id: sensor.roof_rainfall_last_24_hours_count
+  entity_id: sensor.roof_total_rainfall
+  state_characteristic: count
+  keep_last_sample: false
+  sampling_size: 999
+  precision: 4
+  max_age:
+    hours: 24
